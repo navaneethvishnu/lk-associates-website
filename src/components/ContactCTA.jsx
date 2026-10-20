@@ -4,24 +4,57 @@ import { useEffect, useRef, useState } from "react";
 
 export default function ContactCTA() {
   const sectionRef = useRef(null);
+  const cardRef = useRef(null);
+  const footerRef = useRef(null);
   const [isVisible, setIsVisible] = useState(false);
+  const [cardVisible, setCardVisible] = useState(false);
+  const [footerVisible, setFooterVisible] = useState(false);
 
   useEffect(() => {
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          setIsVisible(true);
-        }
-      },
-      { threshold: 0.1, rootMargin: "0px 0px -50px 0px" }
-    );
+    const isDesktop = typeof window !== "undefined" && window.innerWidth >= 1024;
 
-    const el = sectionRef.current;
-    if (el) observer.observe(el);
+    if (isDesktop) {
+      // Desktop: preserve existing whole-section synchronized entrance
+      const observer = new IntersectionObserver(
+        ([entry]) => {
+          if (entry.isIntersecting) {
+            setIsVisible(true);
+            setCardVisible(true);
+            setFooterVisible(true);
+            observer.disconnect();
+          }
+        },
+        { threshold: 0.1, rootMargin: "0px 0px -50px 0px" }
+      );
 
-    return () => {
-      if (el) observer.unobserve(el);
-    };
+      const el = sectionRef.current;
+      if (el) observer.observe(el);
+
+      return () => observer.disconnect();
+    } else {
+      // Mobile & Tablet: individual scroll-triggered entrance for CTA card and footer
+      const observer = new IntersectionObserver(
+        (entries) => {
+          entries.forEach((entry) => {
+            if (entry.isIntersecting) {
+              if (entry.target === cardRef.current) {
+                setCardVisible(true);
+                observer.unobserve(entry.target);
+              } else if (entry.target === footerRef.current) {
+                setFooterVisible(true);
+                observer.unobserve(entry.target);
+              }
+            }
+          });
+        },
+        { threshold: 0.12, rootMargin: "0px 0px -30px 0px" }
+      );
+
+      if (cardRef.current) observer.observe(cardRef.current);
+      if (footerRef.current) observer.observe(footerRef.current);
+
+      return () => observer.disconnect();
+    }
   }, []);
 
   const whatsappMessage = encodeURIComponent(
@@ -43,8 +76,9 @@ export default function ContactCTA() {
       <div className="relative max-w-7xl mx-auto">
         {/* Main CTA Hero Container */}
         <div
+          ref={cardRef}
           className={`relative rounded-3xl p-8 sm:p-14 lg:p-20 bg-white dark:bg-gradient-to-b dark:from-[#141418] dark:via-[#101013] dark:to-[#0d0d10] border border-black/[0.08] dark:border-white/[0.09] shadow-xl dark:shadow-2xl transition-all duration-700 ease-out overflow-hidden ${
-            isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-10"
+            isVisible || cardVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-10"
           }`}
         >
           {/* Subtle Background Structural Accent Grid */}
@@ -153,7 +187,12 @@ export default function ContactCTA() {
         </div>
 
         {/* Minimal Architectural Footer */}
-        <div className="mt-16 sm:mt-20 pt-8 border-t border-black/[0.08] dark:border-white/[0.08] flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-zinc-500 dark:text-zinc-400">
+        <div
+          ref={footerRef}
+          className={`mt-16 sm:mt-20 pt-8 border-t border-black/[0.08] dark:border-white/[0.08] flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-zinc-500 dark:text-zinc-400 transition-all duration-700 ease-out ${
+            isVisible || footerVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"
+          }`}
+        >
           <div className="flex items-center gap-3">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img

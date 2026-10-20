@@ -119,25 +119,70 @@ const PROCESS_STEPS = [
 
 export default function OurProcess() {
   const sectionRef = useRef(null);
+  const headerRef = useRef(null);
+  const stepRefs = useRef([]);
   const [isVisible, setIsVisible] = useState(false);
+  const [headerVisible, setHeaderVisible] = useState(false);
+  const [visibleSteps, setVisibleSteps] = useState(() =>
+    Array(PROCESS_STEPS.length).fill(false)
+  );
   const [activeStep, setActiveStep] = useState(0);
 
   useEffect(() => {
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          setIsVisible(true);
-        }
-      },
-      { threshold: 0.1, rootMargin: "0px 0px -50px 0px" }
-    );
+    const isDesktop = typeof window !== "undefined" && window.innerWidth >= 1024;
 
-    const el = sectionRef.current;
-    if (el) observer.observe(el);
+    if (isDesktop) {
+      // Desktop: preserve existing whole-section synchronized staggered entrance
+      const observer = new IntersectionObserver(
+        ([entry]) => {
+          if (entry.isIntersecting) {
+            setIsVisible(true);
+            setHeaderVisible(true);
+            setVisibleSteps(Array(PROCESS_STEPS.length).fill(true));
+            observer.disconnect();
+          }
+        },
+        { threshold: 0.1, rootMargin: "0px 0px -50px 0px" }
+      );
 
-    return () => {
-      if (el) observer.unobserve(el);
-    };
+      const el = sectionRef.current;
+      if (el) observer.observe(el);
+
+      return () => observer.disconnect();
+    } else {
+      // Mobile & Tablet: individual scroll-triggered entrance for header and each step
+      const observer = new IntersectionObserver(
+        (entries) => {
+          entries.forEach((entry) => {
+            if (entry.isIntersecting) {
+              if (entry.target === headerRef.current) {
+                setHeaderVisible(true);
+                observer.unobserve(entry.target);
+              } else {
+                const idx = stepRefs.current.indexOf(entry.target);
+                if (idx !== -1) {
+                  setVisibleSteps((prev) => {
+                    if (prev[idx]) return prev;
+                    const next = [...prev];
+                    next[idx] = true;
+                    return next;
+                  });
+                  observer.unobserve(entry.target);
+                }
+              }
+            }
+          });
+        },
+        { threshold: 0.12, rootMargin: "0px 0px -30px 0px" }
+      );
+
+      if (headerRef.current) observer.observe(headerRef.current);
+      stepRefs.current.forEach((el) => {
+        if (el) observer.observe(el);
+      });
+
+      return () => observer.disconnect();
+    }
   }, []);
 
   return (
@@ -154,8 +199,9 @@ export default function OurProcess() {
       <div className="relative max-w-7xl mx-auto">
         {/* Section Header */}
         <div
+          ref={headerRef}
           className={`flex flex-col lg:flex-row lg:items-end justify-between gap-8 mb-16 sm:mb-20 transition-all duration-700 ease-out ${
-            isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
+            isVisible || headerVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
           }`}
         >
           <div>
@@ -197,15 +243,17 @@ export default function OurProcess() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 sm:gap-7 relative z-10">
             {PROCESS_STEPS.map((step, idx) => {
               const isSelected = activeStep === idx;
+              const isStepVisible = isVisible || visibleSteps[idx];
               return (
                 <div
                   key={step.step}
+                  ref={(el) => (stepRefs.current[idx] = el)}
                   onClick={() => setActiveStep(idx)}
                   style={{
                     transitionDelay: isVisible ? `${idx * 120}ms` : "0ms",
                   }}
                   className={`group relative rounded-3xl p-6 sm:p-7 flex flex-col justify-between transition-all duration-500 cursor-pointer ${
-                    isVisible
+                    isStepVisible
                       ? "opacity-100 translate-y-0"
                       : "opacity-0 translate-y-8"
                   } ${

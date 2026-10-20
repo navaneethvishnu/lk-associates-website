@@ -55,28 +55,61 @@ const TESTIMONIALS = [
 
 export default function ClientTestimonials() {
   const sectionRef = useRef(null);
+  const headerRef = useRef(null);
+  const cardRef = useRef(null);
   const [isVisible, setIsVisible] = useState(false);
+  const [headerVisible, setHeaderVisible] = useState(false);
+  const [cardVisible, setCardVisible] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [touchStart, setTouchStart] = useState(null);
 
   const total = TESTIMONIALS.length;
 
   useEffect(() => {
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          setIsVisible(true);
-        }
-      },
-      { threshold: 0.1, rootMargin: "0px 0px -50px 0px" }
-    );
+    const isDesktop = typeof window !== "undefined" && window.innerWidth >= 1024;
 
-    const el = sectionRef.current;
-    if (el) observer.observe(el);
+    if (isDesktop) {
+      // Desktop: preserve existing whole-section synchronized entrance
+      const observer = new IntersectionObserver(
+        ([entry]) => {
+          if (entry.isIntersecting) {
+            setIsVisible(true);
+            setHeaderVisible(true);
+            setCardVisible(true);
+            observer.disconnect();
+          }
+        },
+        { threshold: 0.1, rootMargin: "0px 0px -50px 0px" }
+      );
 
-    return () => {
-      if (el) observer.unobserve(el);
-    };
+      const el = sectionRef.current;
+      if (el) observer.observe(el);
+
+      return () => observer.disconnect();
+    } else {
+      // Mobile & Tablet: individual scroll-triggered entrance for header and testimonial card
+      const observer = new IntersectionObserver(
+        (entries) => {
+          entries.forEach((entry) => {
+            if (entry.isIntersecting) {
+              if (entry.target === headerRef.current) {
+                setHeaderVisible(true);
+                observer.unobserve(entry.target);
+              } else if (entry.target === cardRef.current) {
+                setCardVisible(true);
+                observer.unobserve(entry.target);
+              }
+            }
+          });
+        },
+        { threshold: 0.12, rootMargin: "0px 0px -30px 0px" }
+      );
+
+      if (headerRef.current) observer.observe(headerRef.current);
+      if (cardRef.current) observer.observe(cardRef.current);
+
+      return () => observer.disconnect();
+    }
   }, []);
 
   const handleNext = useCallback(() => {
@@ -119,8 +152,9 @@ export default function ClientTestimonials() {
       <div className="relative max-w-7xl mx-auto">
         {/* Header Row with Slider Navigation Buttons */}
         <div
+          ref={headerRef}
           className={`flex flex-col sm:flex-row sm:items-end justify-between gap-6 mb-12 sm:mb-16 transition-all duration-700 ease-out ${
-            isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
+            isVisible || headerVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
           }`}
         >
           <div>
@@ -193,10 +227,11 @@ export default function ClientTestimonials() {
 
         {/* Testimonial Active Display Area with Touch Swiping */}
         <div
+          ref={cardRef}
           onTouchStart={handleTouchStart}
           onTouchEnd={handleTouchEnd}
           className={`relative rounded-3xl p-7 sm:p-12 lg:p-16 bg-white/95 dark:bg-[#121215]/90 border border-black/[0.08] dark:border-white/[0.08] backdrop-blur-xl shadow-xl dark:shadow-2xl transition-all duration-700 ease-out ${
-            isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-10"
+            isVisible || cardVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-10"
           }`}
         >
           {/* Subtle Watermark Quote Mark */}

@@ -4,31 +4,66 @@ import { useEffect, useRef, useState } from "react";
 
 export default function WhyChooseUs() {
   const sectionRef = useRef(null);
+  const cardRefs = useRef([]);
   const [isVisible, setIsVisible] = useState(false);
+  const [visibleCards, setVisibleCards] = useState(() => Array(6).fill(false));
 
   useEffect(() => {
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          setIsVisible(true);
+    const isDesktop = typeof window !== "undefined" && window.innerWidth >= 1024;
+
+    if (isDesktop) {
+      // Desktop: preserve existing whole-section synchronized staggered entrance
+      const observer = new IntersectionObserver(
+        ([entry]) => {
+          if (entry.isIntersecting) {
+            setIsVisible(true);
+            setVisibleCards(Array(6).fill(true));
+            observer.disconnect();
+          }
+        },
+        {
+          threshold: 0.1,
+          rootMargin: "0px 0px -60px 0px",
         }
-      },
-      {
-        threshold: 0.1,
-        rootMargin: "0px 0px -60px 0px",
-      }
-    );
+      );
 
-    const currentSection = sectionRef.current;
-    if (currentSection) {
-      observer.observe(currentSection);
-    }
-
-    return () => {
+      const currentSection = sectionRef.current;
       if (currentSection) {
-        observer.unobserve(currentSection);
+        observer.observe(currentSection);
       }
-    };
+
+      return () => observer.disconnect();
+    } else {
+      // Mobile & Tablet: individual scroll-triggered entrance for each card as it enters the viewport
+      const observer = new IntersectionObserver(
+        (entries) => {
+          entries.forEach((entry) => {
+            if (entry.isIntersecting) {
+              const index = cardRefs.current.indexOf(entry.target);
+              if (index !== -1) {
+                setVisibleCards((prev) => {
+                  if (prev[index]) return prev;
+                  const updated = [...prev];
+                  updated[index] = true;
+                  return updated;
+                });
+                observer.unobserve(entry.target);
+              }
+            }
+          });
+        },
+        {
+          threshold: 0.12,
+          rootMargin: "0px 0px -40px 0px",
+        }
+      );
+
+      cardRefs.current.forEach((el) => {
+        if (el) observer.observe(el);
+      });
+
+      return () => observer.disconnect();
+    }
   }, []);
 
   return (
@@ -50,8 +85,9 @@ export default function WhyChooseUs() {
           {/* TOP LEFT: Iconic Typography Block (Matching Reference)    */}
           {/* ========================================================= */}
           <div
+            ref={(el) => (cardRefs.current[0] = el)}
             className={`lg:col-span-7 flex flex-col justify-between p-6 sm:p-10 lg:p-12 rounded-3xl bg-white/90 dark:bg-[#121215]/80 border border-black/[0.08] dark:border-white/[0.08] backdrop-blur-xl shadow-xl dark:shadow-2xl transition-all duration-700 ease-out ${
-              isVisible
+              visibleCards[0]
                 ? "opacity-100 translate-y-0"
                 : "opacity-0 translate-y-10"
             }`}
@@ -106,9 +142,10 @@ export default function WhyChooseUs() {
           {/* TOP RIGHT: The Signature Metallic Gold Card               */}
           {/* ========================================================= */}
           <div
+            ref={(el) => (cardRefs.current[1] = el)}
             style={{ transitionDelay: isVisible ? "120ms" : "0ms" }}
             className={`lg:col-span-5 group relative rounded-3xl p-7 sm:p-9 lg:p-10 bg-gradient-to-br from-[#E7C982] via-[#D4AF37] to-[#B58A45] text-zinc-950 flex flex-col justify-between min-h-[380px] shadow-[0_20px_50px_rgba(212,175,55,0.18)] transition-all duration-700 ease-out hover:scale-[1.01] hover:shadow-[0_25px_60px_rgba(212,175,55,0.3)] ${
-              isVisible
+              visibleCards[1]
                 ? "opacity-100 translate-y-0"
                 : "opacity-0 translate-y-10"
             }`}
@@ -155,9 +192,10 @@ export default function WhyChooseUs() {
           {/* MIDDLE LEFT: Quality Construction (Visual Showcase)       */}
           {/* ========================================================= */}
           <div
+            ref={(el) => (cardRefs.current[2] = el)}
             style={{ transitionDelay: isVisible ? "240ms" : "0ms" }}
             className={`lg:col-span-6 group relative rounded-3xl overflow-hidden border border-black/[0.08] dark:border-white/[0.08] bg-zinc-900 min-h-[360px] p-7 sm:p-9 flex flex-col justify-between shadow-xl dark:shadow-2xl transition-all duration-700 ease-out hover:border-black/20 dark:hover:border-white/25 ${
-              isVisible
+              visibleCards[2]
                 ? "opacity-100 translate-y-0"
                 : "opacity-0 translate-y-10"
             }`}
@@ -211,9 +249,10 @@ export default function WhyChooseUs() {
           {/* MIDDLE RIGHT: Transparent Pricing (Crisp White Card)      */}
           {/* ========================================================= */}
           <div
+            ref={(el) => (cardRefs.current[3] = el)}
             style={{ transitionDelay: isVisible ? "360ms" : "0ms" }}
             className={`lg:col-span-6 group relative rounded-3xl p-7 sm:p-9 bg-white text-zinc-950 border border-zinc-200/90 flex flex-col justify-between min-h-[360px] shadow-[0_20px_50px_rgba(0,0,0,0.08)] dark:shadow-[0_20px_50px_rgba(0,0,0,0.6)] transition-all duration-700 ease-out hover:scale-[1.01] hover:shadow-[0_25px_60px_rgba(0,0,0,0.15)] dark:hover:shadow-[0_25px_60px_rgba(0,0,0,0.7)] ${
-              isVisible
+              visibleCards[3]
                 ? "opacity-100 translate-y-0"
                 : "opacity-0 translate-y-10"
             }`}
@@ -256,9 +295,10 @@ export default function WhyChooseUs() {
           {/* BOTTOM LEFT: Expert Planning & Design                     */}
           {/* ========================================================= */}
           <div
+            ref={(el) => (cardRefs.current[4] = el)}
             style={{ transitionDelay: isVisible ? "480ms" : "0ms" }}
             className={`lg:col-span-6 group relative rounded-3xl p-7 sm:p-9 bg-white dark:bg-[#121215] border border-black/[0.08] dark:border-white/[0.08] text-zinc-900 dark:text-white flex flex-col justify-between min-h-[320px] shadow-lg dark:shadow-2xl transition-all duration-700 ease-out hover:border-black/20 dark:hover:border-white/25 hover:shadow-xl dark:hover:shadow-[0_20px_50px_rgba(0,0,0,0.85)] ${
-              isVisible
+              visibleCards[4]
                 ? "opacity-100 translate-y-0"
                 : "opacity-0 translate-y-10"
             }`}
@@ -301,9 +341,10 @@ export default function WhyChooseUs() {
           {/* BOTTOM RIGHT: On-Time Project Delivery                    */}
           {/* ========================================================= */}
           <div
+            ref={(el) => (cardRefs.current[5] = el)}
             style={{ transitionDelay: isVisible ? "600ms" : "0ms" }}
             className={`lg:col-span-6 group relative rounded-3xl p-7 sm:p-9 bg-white dark:bg-[#121215] border border-black/[0.08] dark:border-white/[0.08] text-zinc-900 dark:text-white flex flex-col justify-between min-h-[320px] shadow-lg dark:shadow-2xl transition-all duration-700 ease-out hover:border-black/20 dark:hover:border-white/25 hover:shadow-xl dark:hover:shadow-[0_20px_50px_rgba(0,0,0,0.85)] ${
-              isVisible
+              visibleCards[5]
                 ? "opacity-100 translate-y-0"
                 : "opacity-0 translate-y-10"
             }`}
