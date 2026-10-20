@@ -49,6 +49,84 @@ const EXTENDED_PROJECTS = [
   ...COMPLETED_PROJECTS,
 ];
 
+// Helper to provide pre-computed initial 3D stack arrangement on desktop/tablet
+// preventing cards from rendering as a single stacked card before scroll animation triggers
+const getInitialCardStyle = (index) => {
+  const isTablet =
+    typeof window !== "undefined" &&
+    window.innerWidth >= 640 &&
+    window.innerWidth < 1024;
+
+  const spacingY = isTablet ? 90 : 165;
+  const shiftY = isTablet ? -14 : 0;
+  const shiftOutX = isTablet ? -60 : -100;
+  const columnRight = isTablet ? 75 : 105;
+  const depthSpread = isTablet ? 115 : 180;
+  const baseTilt = isTablet ? -6.0 : -7.0;
+  const activeTilt = -4.5;
+  const maxScale = 1.05;
+  const minActiveScale = 0.88;
+  const minStackScale = 0.8;
+
+  let d = index;
+  if (d > TOTAL_PROJECTS / 2) {
+    d -= TOTAL_PROJECTS;
+  }
+  const absD = Math.abs(d);
+
+  const y = d * spacingY + shiftY;
+  let x;
+  if (d >= 0) {
+    const tIn = Math.min(1, d);
+    const easeIn = tIn * tIn * (3 - 2 * tIn);
+    const stackDrift = Math.max(0, d - 1) * 35;
+    x = shiftOutX + (columnRight - shiftOutX) * easeIn + stackDrift;
+  } else {
+    const tOut = Math.min(1, -d);
+    const easeOut = tOut * tOut * (3 - 2 * tOut);
+    const stackDrift = Math.max(0, -d - 1) * 45;
+    x = shiftOutX + (columnRight + 20 - shiftOutX) * easeOut + stackDrift;
+  }
+
+  const z = -Math.pow(absD, 1.15) * depthSpread;
+  const easeScale = absD <= 1.0 ? 1 - absD * absD * (3 - 2 * absD) : 0;
+  let scale;
+  if (absD <= 1.0) {
+    scale = minActiveScale + (maxScale - minActiveScale) * easeScale;
+  } else {
+    const tStack = Math.min(1, (absD - 1.0) / 1.2);
+    scale = minActiveScale - (minActiveScale - minStackScale) * tStack;
+  }
+
+  const easeRot = absD <= 1.0 ? 1 - absD * absD * (3 - 2 * absD) : 0;
+  const rotZ = baseTilt + (activeTilt - baseTilt) * easeRot;
+  const rotY = d < 0 ? -6 + 10 * Math.min(1, -d) : -6 + 4 * Math.min(1, d);
+  const rotX = (d < 0 ? -2 : 2.5) * Math.min(1, absD);
+
+  let opacity;
+  if (d <= 1.0) {
+    const tIn = d;
+    const easeIn = tIn * tIn * (3 - 2 * tIn);
+    opacity = 0.72 + 0.28 * (1 - easeIn);
+  } else {
+    const fade = Math.max(0, 1 - (d - 1.0) / 1.2);
+    opacity = 0.72 * fade;
+  }
+
+  const zScore = d <= 0 ? 50 + d * 15 : 50 - d * 18;
+  const zIndex = Math.max(1, Math.round(zScore));
+
+  return {
+    transformStyle: "preserve-3d",
+    transformOrigin: "center center",
+    transform: `translate(-50%, -50%) translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, ${z.toFixed(1)}px) rotateX(${rotX.toFixed(2)}deg) rotateY(${rotY.toFixed(2)}deg) rotateZ(${rotZ.toFixed(2)}deg) scale(${scale.toFixed(3)})`,
+    opacity: opacity.toFixed(3),
+    zIndex: String(zIndex),
+    visibility: opacity > 0.01 ? "visible" : "hidden",
+    pointerEvents: absD < 1.6 ? "auto" : "none",
+  };
+};
+
 export default function CompletedProjects() {
   const sectionRef = useRef(null);
   const cardRefs = useRef([]);
@@ -401,15 +479,22 @@ export default function CompletedProjects() {
     };
 
     if (isDesktopOrTablet()) {
+      updateCardPositions(0);
       onScroll();
     }
 
+    const onResize = () => {
+      if (!isDesktopOrTablet()) return;
+      updateCardPositions(currentPositionRef.current);
+      onScroll();
+    };
+
     window.addEventListener("scroll", onScroll, { passive: true });
-    window.addEventListener("resize", onScroll, { passive: true });
+    window.addEventListener("resize", onResize, { passive: true });
 
     return () => {
       window.removeEventListener("scroll", onScroll);
-      window.removeEventListener("resize", onScroll);
+      window.removeEventListener("resize", onResize);
       if (animationFrameIdRef.current) {
         cancelAnimationFrame(animationFrameIdRef.current);
         animationFrameIdRef.current = null;
@@ -619,9 +704,7 @@ export default function CompletedProjects() {
                       if (!isActive) scrollToCardIndex(index);
                     }}
                     className="absolute top-1/2 left-1/2 w-[280px] md:w-[325px] lg:w-[380px] cursor-pointer will-change-transform select-none"
-                    style={{
-                      transformStyle: "preserve-3d",
-                    }}
+                    style={getInitialCardStyle(index)}
                   >
                     <div className="group relative rounded-3xl bg-white border border-zinc-200/90 p-3.5 sm:p-4 shadow-[0_20px_45px_rgba(0,0,0,0.12)] dark:shadow-[0_20px_50px_rgba(0,0,0,0.55)] transition-colors duration-200">
                       {/* Project Image */}
