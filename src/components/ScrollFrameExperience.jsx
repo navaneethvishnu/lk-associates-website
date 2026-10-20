@@ -11,29 +11,30 @@ export default function ScrollFrameExperience() {
   const canvasRef = useRef(null);
   const imagesRef = useRef(new Array(TOTAL_FRAMES + 1));
   const loadedSetRef = useRef(new Set());
+  const isHeroInViewRef = useRef(true);
+  const vignetteGradRef = useRef(null);
+  const vignetteHeightRef = useRef(0);
 
   const targetFrameRef = useRef(1);
   const currentFrameRef = useRef(1);
   const lastRenderedFrameRef = useRef(0);
+  const lastProgressRef = useRef(-1);
   const animationFrameIdRef = useRef(null);
 
   const desktopTextRef = useRef(null);
   const mobileTextRef = useRef(null);
   const scrollIndicatorRef = useRef(null);
 
-  // Helper to find the closest loaded frame to avoid any blank screens
+  // Fast outward search for closest loaded frame (O(dist) vs O(N) linear set scan)
   const getClosestLoadedFrame = useCallback((frame) => {
     if (loadedSetRef.current.has(frame)) return frame;
-    let closest = 1;
-    let minDiff = Infinity;
-    for (const loaded of loadedSetRef.current) {
-      const diff = Math.abs(loaded - frame);
-      if (diff < minDiff) {
-        minDiff = diff;
-        closest = loaded;
-      }
+    for (let offset = 1; offset <= TOTAL_FRAMES; offset++) {
+      const up = frame + offset;
+      if (up <= TOTAL_FRAMES && loadedSetRef.current.has(up)) return up;
+      const down = frame - offset;
+      if (down >= 1 && loadedSetRef.current.has(down)) return down;
     }
-    return closest;
+    return 1;
   }, []);
 
   // Draw frame on canvas with responsive cover scaling
@@ -68,12 +69,16 @@ export default function ScrollFrameExperience() {
       // In dark mode, preserve existing dark gradients and shadows at top and bottom; in light mode, keep background image clear
       const isDarkTheme = document.documentElement.classList.contains("dark");
       if (isDarkTheme) {
-        const vignette = ctx.createLinearGradient(0, 0, 0, height);
-        vignette.addColorStop(0, "rgba(9, 9, 11, 0.45)");
-        vignette.addColorStop(0.2, "rgba(9, 9, 11, 0.08)");
-        vignette.addColorStop(0.75, "rgba(9, 9, 11, 0.2)");
-        vignette.addColorStop(1, "rgba(9, 9, 11, 0.85)");
-        ctx.fillStyle = vignette;
+        if (!vignetteGradRef.current || vignetteHeightRef.current !== height) {
+          const vignette = ctx.createLinearGradient(0, 0, 0, height);
+          vignette.addColorStop(0, "rgba(9, 9, 11, 0.45)");
+          vignette.addColorStop(0.2, "rgba(9, 9, 11, 0.08)");
+          vignette.addColorStop(0.75, "rgba(9, 9, 11, 0.2)");
+          vignette.addColorStop(1, "rgba(9, 9, 11, 0.85)");
+          vignetteGradRef.current = vignette;
+          vignetteHeightRef.current = height;
+        }
+        ctx.fillStyle = vignetteGradRef.current;
         ctx.fillRect(0, 0, width, height);
       }
 
@@ -100,32 +105,28 @@ export default function ScrollFrameExperience() {
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = "high";
+    ctx.imageSmoothingQuality = width < 768 ? "medium" : "high";
+
+    vignetteGradRef.current = null; // Invalidate gradient cache on resize
 
     drawFrame(Math.round(currentFrameRef.current));
   }, [drawFrame]);
 
-  // Frame Preloading Strategy
-  useEffect(() => {
-    let isCancelled = false;
+  // Helper to load a single frame on demand
+  const loadSingleFrame = useCallback(
+    (idx) => {
+      if (idx < 1 || idx > TOTAL_FRAMES) return Promise.resolve();
+      if (imagesRef.current[idx]) return Promise.resolve();
 
-    const loadSingleFrame = (idx) => {
       return new Promise((resolve) => {
-        if (imagesRef.current[idx]) {
-          resolve();
-          return;
-        }
         const img = new Image();
         img.src = FRAME_PATH(idx);
         img.onload = () => {
-          if (!isCancelled) {
-            imagesRef.current[idx] = img;
-            loadedSetRef.current.add(idx);
-            // Re-render immediately if on initial frame or currently visible frame
-            const cur = Math.round(currentFrameRef.current);
-            if (idx === cur || (idx === 1 && !lastRenderedFrameRef.current)) {
-              drawFrame(idx);
-            }
+          imagesRef.current[idx] = img;
+          loadedSetRef.current.add(idx);
+          const cur = Math.round(currentFrameRef.current);
+          if (idx === cur || (idx === 1 && !lastRenderedFrameRef.current)) {
+            drawFrame(idx);
           }
           resolve();
         };
@@ -133,7 +134,24 @@ export default function ScrollFrameExperience() {
           resolve();
         };
       });
-    };
+    },
+    [drawFrame]
+  );
+
+  // Adaptive Frame Preloading Strategy (Lightweight on mobile, paused when out of view)
+  useEffect(() => {
+    let isCancelled = false;
+
+    // Observe when Hero section is visible to pause/resume background loading
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        isHeroInViewRef.current = entry.isIntersecting;
+      },
+      { threshold: 0.01, rootMargin: "200px 0px 200px 0px" }
+    );
+
+    const containerEl = containerRef.current;
+    if (containerEl) observer.observe(containerEl);
 
     const startPreloading = async () => {
       // 1. Priority 1: Load initial frame immediately
@@ -141,21 +159,31 @@ export default function ScrollFrameExperience() {
       if (isCancelled) return;
       drawFrame(1);
 
-      // 2. Priority 2: Load keyframes evenly across sequence (every 5th frame)
+      // 2. Priority 2: Keyframes across the sequence
+      // On mobile: every 10th frame (~36 frames total, ~7.5MB instead of 76MB)
+      // On desktop: every 5th frame (~72 frames total)
+      const isMobile = typeof window !== "undefined" && window.innerWidth < 768;
+      const step = isMobile ? 10 : 5;
+
       const keyframes = [];
-      for (let i = 2; i <= TOTAL_FRAMES; i += 5) {
+      for (let i = 1 + step; i <= TOTAL_FRAMES; i += step) {
         keyframes.push(i);
       }
-      const KEYFRAME_CHUNK = 8;
+
+      const KEYFRAME_CHUNK = isMobile ? 4 : 6;
       for (let i = 0; i < keyframes.length; i += KEYFRAME_CHUNK) {
         if (isCancelled) return;
         await Promise.all(
-          keyframes.slice(i, i + KEYFRAME_CHUNK).map(loadSingleFrame),
+          keyframes.slice(i, i + KEYFRAME_CHUNK).map(loadSingleFrame)
         );
+        // Micro-yield to keep main thread completely unblocked
+        await new Promise((r) => setTimeout(r, 16));
       }
+
       if (isCancelled) return;
 
-      // 3. Priority 3: Load all remaining frames in managed concurrency batches
+      // 3. Priority 3: Idle background loading for remaining frames
+      // Only executes when browser is idle and Hero section is currently in view
       const remaining = [];
       for (let i = 2; i <= TOTAL_FRAMES; i++) {
         if (!loadedSetRef.current.has(i)) {
@@ -163,11 +191,32 @@ export default function ScrollFrameExperience() {
         }
       }
 
-      const BATCH_SIZE = 8;
-      for (let i = 0; i < remaining.length; i += BATCH_SIZE) {
-        if (isCancelled) break;
-        const batch = remaining.slice(i, i + BATCH_SIZE);
-        await Promise.all(batch.map(loadSingleFrame));
+      let rIndex = 0;
+      const loadIdleBatch = () => {
+        if (isCancelled || rIndex >= remaining.length) return;
+
+        if (isHeroInViewRef.current) {
+          const batch = remaining.slice(rIndex, rIndex + (isMobile ? 3 : 5));
+          rIndex += batch.length;
+          Promise.all(batch.map(loadSingleFrame)).then(() => {
+            if (!isCancelled && rIndex < remaining.length) {
+              if (typeof requestIdleCallback !== "undefined") {
+                requestIdleCallback(loadIdleBatch, { timeout: 150 });
+              } else {
+                setTimeout(loadIdleBatch, 60);
+              }
+            }
+          });
+        } else {
+          // Check again in 600ms if hero re-enters view
+          setTimeout(loadIdleBatch, 600);
+        }
+      };
+
+      if (typeof requestIdleCallback !== "undefined") {
+        requestIdleCallback(loadIdleBatch, { timeout: 200 });
+      } else {
+        setTimeout(loadIdleBatch, 100);
       }
     };
 
@@ -175,8 +224,9 @@ export default function ScrollFrameExperience() {
 
     return () => {
       isCancelled = true;
+      if (containerEl) observer.unobserve(containerEl);
     };
-  }, [drawFrame]);
+  }, [drawFrame, loadSingleFrame]);
 
   // Updates transforms for desktop and mobile hero text based on scroll progress (0 to 1)
   const updateTextTransforms = useCallback((progress) => {
@@ -214,23 +264,86 @@ export default function ScrollFrameExperience() {
     }
   }, []);
 
-  // Scroll tracking and RAF lerp loop
+  // Scroll tracking and On-Demand RAF lerp loop (stops when settled or off-screen)
   useEffect(() => {
     handleResize();
+
+    const startRenderLoop = () => {
+      if (animationFrameIdRef.current) return;
+
+      const renderLoop = () => {
+        const container = containerRef.current;
+        if (container) {
+          const rect = container.getBoundingClientRect();
+          if (rect.bottom < -200 || rect.top > window.innerHeight + 200) {
+            animationFrameIdRef.current = null;
+            return;
+          }
+        }
+
+        const target = targetFrameRef.current;
+        const current = currentFrameRef.current;
+        const diff = target - current;
+
+        let isMoving = false;
+        if (Math.abs(diff) > 0.005) {
+          currentFrameRef.current += diff * 0.15;
+          const targetInt = Math.round(currentFrameRef.current);
+          if (targetInt !== lastRenderedFrameRef.current) {
+            drawFrame(targetInt);
+          }
+          isMoving = true;
+        } else if (Math.abs(diff) > 0.0001) {
+          currentFrameRef.current = target;
+          const targetInt = Math.round(target);
+          if (targetInt !== lastRenderedFrameRef.current) {
+            drawFrame(targetInt);
+          }
+        }
+
+        const rawP = (currentFrameRef.current - 1) / (TOTAL_FRAMES - 1);
+        const p = Math.min(Math.max(rawP, 0), 1);
+        if (Math.abs(p - lastProgressRef.current) > 0.0001) {
+          updateTextTransforms(p);
+          lastProgressRef.current = p;
+          isMoving = true;
+        }
+
+        if (isMoving || Math.abs(target - currentFrameRef.current) > 0.005) {
+          animationFrameIdRef.current = requestAnimationFrame(renderLoop);
+        } else {
+          animationFrameIdRef.current = null;
+        }
+      };
+
+      animationFrameIdRef.current = requestAnimationFrame(renderLoop);
+    };
 
     const onScroll = () => {
       const container = containerRef.current;
       if (!container) return;
 
       const rect = container.getBoundingClientRect();
+      if (rect.bottom < -100 || rect.top > window.innerHeight + 100) return;
+
       const scrollY = -rect.top;
       const maxScroll = rect.height - window.innerHeight;
-
       if (maxScroll <= 0) return;
 
       const rawProgress = Math.min(Math.max(scrollY / maxScroll, 0), 1);
       const target = 1 + rawProgress * (TOTAL_FRAMES - 1);
       targetFrameRef.current = target;
+
+      // Proximity load: prioritize nearby frames around scrub position
+      const center = Math.round(target);
+      const range = window.innerWidth < 768 ? 3 : 5;
+      for (let f = Math.max(1, center - range); f <= Math.min(TOTAL_FRAMES, center + range); f++) {
+        if (!loadedSetRef.current.has(f)) {
+          loadSingleFrame(f);
+        }
+      }
+
+      startRenderLoop();
     };
 
     // Calculate initial position immediately
@@ -245,60 +358,34 @@ export default function ScrollFrameExperience() {
       targetFrameRef.current = initialTarget;
       currentFrameRef.current = initialTarget;
       updateTextTransforms(initialProgress);
+      lastProgressRef.current = initialProgress;
     } else {
       updateTextTransforms(0);
+      lastProgressRef.current = 0;
     }
 
-    window.addEventListener("resize", handleResize);
-    window.addEventListener("scroll", onScroll, { passive: true });
-
-    let lastProgress = -1;
-
-    // RAF animation loop with smooth lerping
-    const renderLoop = () => {
-      const target = targetFrameRef.current;
-      const current = currentFrameRef.current;
-      const diff = target - current;
-
-      if (Math.abs(diff) > 0.005) {
-        // Easing interpolation for silky forward/backward play
-        currentFrameRef.current += diff * 0.15;
-        const targetInt = Math.round(currentFrameRef.current);
-        if (targetInt !== lastRenderedFrameRef.current) {
-          drawFrame(targetInt);
-        }
-      } else if (Math.abs(diff) > 0.0001) {
-        currentFrameRef.current = target;
-        const targetInt = Math.round(target);
-        if (targetInt !== lastRenderedFrameRef.current) {
-          drawFrame(targetInt);
-        }
-      }
-
-      const rawP = (currentFrameRef.current - 1) / (TOTAL_FRAMES - 1);
-      const p = Math.min(Math.max(rawP, 0), 1);
-      if (Math.abs(p - lastProgress) > 0.0001) {
-        updateTextTransforms(p);
-        lastProgress = p;
-      }
-
-      animationFrameIdRef.current = requestAnimationFrame(renderLoop);
+    const onResizeHandler = () => {
+      handleResize();
+      startRenderLoop();
     };
 
-    animationFrameIdRef.current = requestAnimationFrame(renderLoop);
+    window.addEventListener("resize", onResizeHandler);
+    window.addEventListener("scroll", onScroll, { passive: true });
 
     return () => {
-      window.removeEventListener("resize", handleResize);
+      window.removeEventListener("resize", onResizeHandler);
       window.removeEventListener("scroll", onScroll);
       if (animationFrameIdRef.current) {
         cancelAnimationFrame(animationFrameIdRef.current);
+        animationFrameIdRef.current = null;
       }
     };
-  }, [handleResize, drawFrame, updateTextTransforms]);
+  }, [handleResize, drawFrame, updateTextTransforms, loadSingleFrame]);
 
   // Re-render canvas frame when theme toggles
   const { theme } = useTheme();
   useEffect(() => {
+    vignetteGradRef.current = null;
     drawFrame(Math.round(currentFrameRef.current));
   }, [theme, drawFrame]);
 

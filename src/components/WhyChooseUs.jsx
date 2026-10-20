@@ -206,6 +206,9 @@ export default function WhyChooseUs() {
               <img
                 src="/frames/frame_128.jpg"
                 alt="Quality Construction Workmanship"
+                width={600}
+                height={360}
+                decoding="async"
                 className="w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-105"
                 loading="lazy"
               />

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useTheme } from "@/context/ThemeContext";
 
 const NAV_LINKS = [
@@ -21,16 +21,17 @@ export default function Navbar() {
   const isDark = theme === "dark";
 
   const [isScrolled, setIsScrolled] = useState(false);
+  const isScrolledRef = useRef(false);
   const [activeSection, setActiveSection] = useState("home");
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
-  // Background blur and transparency on scroll
+  // Background blur and transparency on scroll (debounced to boolean transitions)
   useEffect(() => {
     const handleScroll = () => {
-      if (window.scrollY > 24) {
-        setIsScrolled(true);
-      } else {
-        setIsScrolled(false);
+      const scrolled = window.scrollY > 24;
+      if (scrolled !== isScrolledRef.current) {
+        isScrolledRef.current = scrolled;
+        setIsScrolled(scrolled);
       }
     };
 
@@ -127,6 +128,9 @@ export default function Navbar() {
               <img
                 src="/lk-associates-emblem-only.webp"
                 alt="LK Associates"
+                width={36}
+                height={36}
+                decoding="async"
                 className="w-full h-full object-contain"
               />
             </div>

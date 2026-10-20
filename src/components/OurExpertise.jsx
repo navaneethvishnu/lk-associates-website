@@ -261,14 +261,56 @@ export default function OurExpertise() {
     }, 450);
   }, []);
 
-  // Mobile scroll-driven animation synchronization & snapping
+  // Mobile scroll-driven animation synchronization & snapping (On-demand RAF)
   useEffect(() => {
+    const isMobile = () => typeof window !== "undefined" && window.innerWidth < 640;
+
+    const startRenderLoop = () => {
+      if (!isMobile() || animationFrameIdRef.current) return;
+
+      const renderLoop = () => {
+        if (!isMobile()) {
+          animationFrameIdRef.current = null;
+          return;
+        }
+
+        const track = mobileTrackRef.current;
+        if (track) {
+          const rect = track.getBoundingClientRect();
+          if (rect.bottom < -200 || rect.top > window.innerHeight + 200) {
+            animationFrameIdRef.current = null;
+            return;
+          }
+        }
+
+        const target = targetPositionRef.current;
+        const current = currentPositionRef.current;
+        const diff = target - current;
+
+        if (Math.abs(diff) > 0.0005) {
+          currentPositionRef.current += diff * 0.16;
+          applyCardTransforms(currentPositionRef.current);
+          animationFrameIdRef.current = requestAnimationFrame(renderLoop);
+        } else {
+          if (current !== target) {
+            currentPositionRef.current = target;
+            applyCardTransforms(target);
+          }
+          animationFrameIdRef.current = null;
+        }
+      };
+
+      animationFrameIdRef.current = requestAnimationFrame(renderLoop);
+    };
+
     const onScroll = () => {
-      if (typeof window === "undefined" || window.innerWidth >= 640) return;
+      if (!isMobile()) return;
       const track = mobileTrackRef.current;
       if (!track) return;
 
       const rect = track.getBoundingClientRect();
+      if (rect.bottom < -100 || rect.top > window.innerHeight + 100) return;
+
       const stickyTop = 56; // 3.5rem (top-14)
       const stickyEl = stickyContainerRef.current;
       const stickyHeight = stickyEl ? stickyEl.offsetHeight : 500;
@@ -282,6 +324,8 @@ export default function OurExpertise() {
         SERVICES.length - 1
       );
 
+      startRenderLoop();
+
       // Debounce timer: settle to exact snap point whenever scrolling stops
       if (snapTimeoutRef.current) {
         clearTimeout(snapTimeoutRef.current);
@@ -294,31 +338,12 @@ export default function OurExpertise() {
       }
     };
 
-    onScroll();
+    if (isMobile()) {
+      onScroll();
+    }
 
     window.addEventListener("scroll", onScroll, { passive: true });
     window.addEventListener("resize", onScroll, { passive: true });
-
-    // Smooth lerp loop for fluid 60/120fps motion
-    const renderLoop = () => {
-      if (window.innerWidth < 640) {
-        const target = targetPositionRef.current;
-        const current = currentPositionRef.current;
-        const diff = target - current;
-
-        if (Math.abs(diff) > 0.0005) {
-          currentPositionRef.current += diff * 0.16;
-          applyCardTransforms(currentPositionRef.current);
-        } else if (current !== target) {
-          currentPositionRef.current = target;
-          applyCardTransforms(target);
-        }
-      }
-
-      animationFrameIdRef.current = requestAnimationFrame(renderLoop);
-    };
-
-    animationFrameIdRef.current = requestAnimationFrame(renderLoop);
 
     return () => {
       window.removeEventListener("scroll", onScroll);
@@ -328,6 +353,7 @@ export default function OurExpertise() {
       }
       if (animationFrameIdRef.current) {
         cancelAnimationFrame(animationFrameIdRef.current);
+        animationFrameIdRef.current = null;
       }
     };
   }, [applyCardTransforms, handleScrollSettle]);
@@ -453,6 +479,9 @@ export default function OurExpertise() {
                   <img
                     src={service.image}
                     alt={service.title}
+                    width={640}
+                    height={400}
+                    decoding="async"
                     className="w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-105"
                     loading="lazy"
                   />
@@ -547,6 +576,9 @@ export default function OurExpertise() {
                       <img
                         src={service.image}
                         alt={service.title}
+                        width={315}
+                        height={197}
+                        decoding="async"
                         className="w-full h-full object-cover"
                         loading="lazy"
                       />

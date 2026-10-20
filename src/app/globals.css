@@ -48,27 +48,22 @@ html.dark body {
   0% {
     transform: translateY(-4px);
     opacity: 0;
-    filter: drop-shadow(0 0 0px rgba(212, 175, 55, 0));
   }
   20% {
     transform: translateY(0px);
     opacity: 1;
-    filter: drop-shadow(0 0 3px rgba(212, 175, 55, 0.35));
   }
   55% {
     transform: translateY(9px);
     opacity: 1;
-    filter: drop-shadow(0 0 10px rgba(212, 175, 55, 0.85)) drop-shadow(0 2px 6px rgba(212, 175, 55, 0.45));
   }
   80% {
     transform: translateY(15px);
     opacity: 0.4;
-    filter: drop-shadow(0 0 5px rgba(212, 175, 55, 0.3));
   }
   90%, 100% {
     transform: translateY(18px);
     opacity: 0;
-    filter: drop-shadow(0 0 0px rgba(212, 175, 55, 0));
   }
 }
 
@@ -79,7 +74,7 @@ html.dark body {
 
 .animate-scroll-arrow {
   animation: scrollArrowGlide 2.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
-  will-change: transform, opacity, filter;
+  will-change: transform, opacity;
 }
 
 /* Completed Projects Tablet Overflow Accommodations */

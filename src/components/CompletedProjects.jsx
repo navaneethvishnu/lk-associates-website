@@ -51,6 +51,7 @@ export default function CompletedProjects() {
   const isAutoScrollingRef = useRef(false);
 
   const [activeCardIndex, setActiveCardIndex] = useState(0);
+  const activeCardIndexRef = useRef(0);
 
   const totalCards = COMPLETED_PROJECTS.length;
 
@@ -219,7 +220,7 @@ export default function CompletedProjects() {
         el.style.pointerEvents = absD < 1.6 ? "auto" : "none";
 
         const cardInner = el.firstElementChild;
-        if (cardInner) {
+        if (cardInner && opacity > 0.01) {
           if (isTablet) {
             const isDark =
               typeof document !== "undefined" &&
@@ -243,7 +244,10 @@ export default function CompletedProjects() {
         }
       });
 
-      setActiveCardIndex(closestIndex);
+      if (closestIndex !== activeCardIndexRef.current) {
+        activeCardIndexRef.current = closestIndex;
+        setActiveCardIndex(closestIndex);
+      }
     },
     [totalCards]
   );
@@ -308,13 +312,48 @@ export default function CompletedProjects() {
     }, 450);
   }, [totalCards]);
 
-  // Scroll synchronization and 120 FPS lerp loop
+  // Scroll synchronization and On-Demand lerp loop (stops when settled or off-screen)
   useEffect(() => {
+    const startRenderLoop = () => {
+      if (animationFrameIdRef.current) return;
+
+      const renderLoop = () => {
+        const section = sectionRef.current;
+        if (section) {
+          const rect = section.getBoundingClientRect();
+          if (rect.bottom < -200 || rect.top > window.innerHeight + 200) {
+            animationFrameIdRef.current = null;
+            return;
+          }
+        }
+
+        const target = targetPositionRef.current;
+        const current = currentPositionRef.current;
+        const diff = target - current;
+
+        if (Math.abs(diff) > 0.0005) {
+          currentPositionRef.current += diff * 0.14;
+          updateCardPositions(currentPositionRef.current);
+          animationFrameIdRef.current = requestAnimationFrame(renderLoop);
+        } else {
+          if (current !== target) {
+            currentPositionRef.current = target;
+            updateCardPositions(target);
+          }
+          animationFrameIdRef.current = null;
+        }
+      };
+
+      animationFrameIdRef.current = requestAnimationFrame(renderLoop);
+    };
+
     const onScroll = () => {
       const section = sectionRef.current;
       if (!section) return;
 
       const rect = section.getBoundingClientRect();
+      if (rect.bottom < -100 || rect.top > window.innerHeight + 100) return;
+
       const maxScroll = rect.height - window.innerHeight;
       if (maxScroll <= 0) return;
 
@@ -324,6 +363,8 @@ export default function CompletedProjects() {
 
       // Controlled stepped progress ensures clean transitions and eliminates awkward mid-states
       targetPositionRef.current = getSteppedProgress(rawProgress, totalCards - 1);
+
+      startRenderLoop();
 
       // Reset settle debounce timer
       if (snapTimeoutRef.current) {
@@ -343,30 +384,12 @@ export default function CompletedProjects() {
     window.addEventListener("scroll", onScroll, { passive: true });
     window.addEventListener("resize", onScroll, { passive: true });
 
-    // Buttery-smooth requestAnimationFrame lerp loop
-    const renderLoop = () => {
-      const target = targetPositionRef.current;
-      const current = currentPositionRef.current;
-      const diff = target - current;
-
-      if (Math.abs(diff) > 0.0005) {
-        currentPositionRef.current += diff * 0.14;
-        updateCardPositions(currentPositionRef.current);
-      } else if (current !== target) {
-        currentPositionRef.current = target;
-        updateCardPositions(target);
-      }
-
-      animationFrameIdRef.current = requestAnimationFrame(renderLoop);
-    };
-
-    animationFrameIdRef.current = requestAnimationFrame(renderLoop);
-
     return () => {
       window.removeEventListener("scroll", onScroll);
       window.removeEventListener("resize", onScroll);
       if (animationFrameIdRef.current) {
         cancelAnimationFrame(animationFrameIdRef.current);
+        animationFrameIdRef.current = null;
       }
       if (snapTimeoutRef.current) {
         clearTimeout(snapTimeoutRef.current);
@@ -462,6 +485,9 @@ export default function CompletedProjects() {
                         <img
                           src={project.image}
                           alt={project.location}
+                          width={380}
+                          height={238}
+                          decoding="async"
                           className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
                           loading="lazy"
                         />

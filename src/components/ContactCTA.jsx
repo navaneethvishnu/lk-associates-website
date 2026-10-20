@@ -198,6 +198,9 @@ export default function ContactCTA() {
             <img
               src="/lk-associates-emblem-only.webp"
               alt="LK Associates"
+              width={20}
+              height={20}
+              decoding="async"
               className="w-5 h-5 object-contain opacity-80"
             />
             <span className="font-mono font-bold tracking-wider text-zinc-800 dark:text-zinc-200 uppercase">
