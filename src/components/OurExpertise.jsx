@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { useTheme } from "@/context/ThemeContext";
 
 const SERVICES = [
   {
@@ -61,55 +60,44 @@ const SERVICES = [
   },
 ];
 
-// Controlled stepped progress with quintic smootherstep and resting plateaus
-const getSteppedProgress = (rawProgress, totalSteps) => {
-  const scaled = rawProgress * totalSteps;
-  const index = Math.floor(scaled);
-  if (index >= totalSteps) return totalSteps;
-  const f = scaled - index; // fraction within step [0, 1)
-
-  // 36% of each interval is a solid resting plateau at the exact card position
-  const plateau = 0.18;
-  if (f <= plateau) {
-    return index;
-  }
-  if (f >= 1 - plateau) {
-    return index + 1;
-  }
-
-  // Smooth quintic smootherstep (zero velocity and zero acceleration at endpoints)
-  const t = (f - plateau) / (1 - 2 * plateau);
-  const eased = t * t * t * (t * (t * 6 - 15) + 10);
-  return index + eased;
-};
+const TOTAL_SERVICES = SERVICES.length;
+// Triplicate array for infinite seamless looping in both directions
+const EXTENDED_SERVICES = [...SERVICES, ...SERVICES, ...SERVICES];
 
 export default function OurExpertise() {
   const sectionRef = useRef(null);
-  const mobileTrackRef = useRef(null);
-  const stickyContainerRef = useRef(null);
-  const cardsTrackRef = useRef(null);
-  const mobileCardRefs = useRef([]);
-  const targetPositionRef = useRef(0);
-  const currentPositionRef = useRef(0);
-  const animationFrameIdRef = useRef(null);
-  const snapTimeoutRef = useRef(null);
-  const isAutoScrollingRef = useRef(false);
-  const touchStartYRef = useRef(0);
-  const touchStartTimeRef = useRef(0);
-
   const [isVisible, setIsVisible] = useState(false);
 
-  // Desktop reveal animation observer
+  // Mobile infinite carousel state
+  // Start at index TOTAL_SERVICES (5) which is the first slide of the middle set
+  const [currentIndex, setCurrentIndex] = useState(TOTAL_SERVICES);
+  const [isTransitioning, setIsTransitioning] = useState(true);
+  const [viewportWidth, setViewportWidth] = useState(375);
+  const [dragOffset, setDragOffset] = useState(0);
+
+  const isInteractingRef = useRef(false);
+  const resumeTimerRef = useRef(null);
+  const isSectionInViewRef = useRef(false);
+
+  const touchStartXRef = useRef(0);
+  const touchStartYRef = useRef(0);
+  const touchStartTimeRef = useRef(0);
+  const isHorizontalSwipeRef = useRef(null);
+
+  // Desktop reveal animation observer & section visibility tracker
   useEffect(() => {
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
           setIsVisible(true);
+          isSectionInViewRef.current = true;
+        } else {
+          isSectionInViewRef.current = false;
         }
       },
       {
         threshold: 0.1,
-        rootMargin: "0px 0px -60px 0px",
+        rootMargin: "0px 0px -40px 0px",
       }
     );
 
@@ -125,287 +113,140 @@ export default function OurExpertise() {
     };
   }, []);
 
-  // Update card positions, scale, opacity, and active state smoothly
-  const applyCardTransforms = useCallback((pos) => {
-    if (!cardsTrackRef.current) return;
-    const windowWidth = typeof window !== "undefined" ? window.innerWidth : 375;
-    const cardWidth = Math.min(windowWidth * 0.78, 315);
-    const gap = 14;
-    const stepWidth = cardWidth + gap;
-    const initialOffset = (windowWidth - cardWidth) / 2;
-
-    // Center the active continuous progress card in the viewport
-    const translateX = initialOffset - pos * stepWidth;
-    cardsTrackRef.current.style.transform = `translate3d(${translateX}px, 0, 0)`;
-
-    // Scale and opacity adjustments based on distance to center
-    mobileCardRefs.current.forEach((cardEl, idx) => {
-      if (!cardEl) return;
-      const dist = Math.abs(idx - pos);
-      const scale = Math.max(0.92, 1 - dist * 0.08);
-      const opacity = Math.max(0.50, 1 - dist * 0.50);
-
-      cardEl.style.transform = `scale(${scale})`;
-      cardEl.style.opacity = `${opacity}`;
-
-      const isDark =
-        typeof document !== "undefined" &&
-        document.documentElement.classList.contains("dark");
-
-      if (isDark) {
-        // Dark mode: preserve existing high-contrast deep shadow and light border
-        if (dist < 0.45) {
-          cardEl.style.borderColor = "rgba(255, 255, 255, 0.25)";
-          cardEl.style.boxShadow = "0 25px 50px rgba(0, 0, 0, 0.85)";
-        } else {
-          cardEl.style.borderColor = "rgba(255, 255, 255, 0.08)";
-          cardEl.style.boxShadow = "0 10px 25px rgba(0, 0, 0, 0.4)";
-        }
-      } else {
-        // Mobile Light Mode: soft, diffused, natural elevation with negative spread to prevent hard cutoff
-        if (dist < 0.45) {
-          cardEl.style.borderColor = "rgba(0, 0, 0, 0.12)";
-          cardEl.style.boxShadow =
-            "0 14px 30px -6px rgba(0, 0, 0, 0.12), 0 4px 12px -2px rgba(0, 0, 0, 0.06)";
-        } else {
-          cardEl.style.borderColor = "rgba(0, 0, 0, 0.06)";
-          cardEl.style.boxShadow =
-            "0 6px 16px -4px rgba(0, 0, 0, 0.07), 0 2px 6px -1px rgba(0, 0, 0, 0.03)";
-        }
-      }
-    });
-  }, []);
-
-  // Re-apply card shadows and borders immediately when theme toggles
-  const { theme } = useTheme();
+  // Update viewport width on resize
   useEffect(() => {
-    if (typeof window !== "undefined" && window.innerWidth < 640) {
-      applyCardTransforms(currentPositionRef.current);
-    }
-  }, [theme, applyCardTransforms]);
-
-  // Smooth scroll page to a specific mobile card index
-  const scrollToMobileCard = useCallback((index) => {
-    if (typeof window === "undefined") return;
-    const track = mobileTrackRef.current;
-    if (!track) return;
-
-    const rect = track.getBoundingClientRect();
-    const currentScrollY = window.scrollY;
-    const stickyTop = 56;
-    const trackTopInDoc = currentScrollY + rect.top;
-    const stickyEl = stickyContainerRef.current;
-    const stickyHeight = stickyEl ? stickyEl.offsetHeight : 500;
-    const maxScroll = track.offsetHeight - stickyHeight;
-    if (maxScroll <= 0) return;
-
-    const numSteps = SERVICES.length - 1;
-    const targetIndex = Math.min(Math.max(index, 0), numSteps);
-    const targetProgress = targetIndex / numSteps;
-    const targetScrollY = trackTopInDoc - stickyTop + targetProgress * maxScroll;
-
-    isAutoScrollingRef.current = true;
-    window.scrollTo({
-      top: targetScrollY,
-      behavior: "smooth",
-    });
-
-    setTimeout(() => {
-      isAutoScrollingRef.current = false;
-    }, 450);
+    const updateWidth = () => {
+      if (typeof window !== "undefined") {
+        setViewportWidth(window.innerWidth);
+      }
+    };
+    updateWidth();
+    window.addEventListener("resize", updateWidth, { passive: true });
+    return () => window.removeEventListener("resize", updateWidth);
   }, []);
 
-  // Mandatory scroll-settle: snaps cleanly to nearest card if user stops mid-transition
-  const handleScrollSettle = useCallback(() => {
-    if (isAutoScrollingRef.current) return;
-    if (typeof window === "undefined" || window.innerWidth >= 640) return;
-    const track = mobileTrackRef.current;
-    if (!track) return;
-
-    const rect = track.getBoundingClientRect();
-    const stickyTop = 56;
-    const stickyEl = stickyContainerRef.current;
-    const stickyHeight = stickyEl ? stickyEl.offsetHeight : 500;
-    const maxScroll = track.offsetHeight - stickyHeight;
-    if (maxScroll <= 0) return;
-
-    const scrollY = stickyTop - rect.top;
-    const rawProgress = scrollY / maxScroll;
-
-    // Do not trap user when entering from top or exiting to bottom
-    if (rawProgress <= 0.03 || rawProgress >= 0.97) return;
-
-    const numSteps = SERVICES.length - 1;
-    const continuousCard = rawProgress * numSteps;
-    const targetIndex = Math.min(
-      Math.max(Math.round(continuousCard), 0),
-      numSteps
-    );
-
-    // If already settled at an exact snap point, no action needed
-    if (Math.abs(continuousCard - targetIndex) < 0.03) return;
-
-    const currentScrollY = window.scrollY;
-    const trackTopInDoc = currentScrollY + rect.top;
-    const targetScrollY =
-      trackTopInDoc - stickyTop + (targetIndex / numSteps) * maxScroll;
-
-    isAutoScrollingRef.current = true;
-    window.scrollTo({
-      top: targetScrollY,
-      behavior: "smooth",
-    });
-
-    setTimeout(() => {
-      isAutoScrollingRef.current = false;
-    }, 450);
+  const nextSlide = useCallback(() => {
+    setIsTransitioning(true);
+    setCurrentIndex((prev) => prev + 1);
   }, []);
 
-  // Mobile scroll-driven animation synchronization & snapping (On-demand RAF)
+  const prevSlide = useCallback(() => {
+    setIsTransitioning(true);
+    setCurrentIndex((prev) => prev - 1);
+  }, []);
+
+  // When transition ends at boundaries, seamlessly snap without animation
+  const handleTransitionEnd = useCallback(() => {
+    setCurrentIndex((current) => {
+      if (current >= TOTAL_SERVICES * 2) {
+        setIsTransitioning(false);
+        return current - TOTAL_SERVICES;
+      } else if (current < TOTAL_SERVICES) {
+        setIsTransitioning(false);
+        return current + TOTAL_SERVICES;
+      }
+      return current;
+    });
+  }, []);
+
+  // Re-enable smooth transition on the frame after an instant teleport
   useEffect(() => {
-    const isMobile = () => typeof window !== "undefined" && window.innerWidth < 640;
-
-    const startRenderLoop = () => {
-      if (!isMobile() || animationFrameIdRef.current) return;
-
-      const renderLoop = () => {
-        if (!isMobile()) {
-          animationFrameIdRef.current = null;
-          return;
-        }
-
-        const track = mobileTrackRef.current;
-        if (track) {
-          const rect = track.getBoundingClientRect();
-          if (rect.bottom < -200 || rect.top > window.innerHeight + 200) {
-            animationFrameIdRef.current = null;
-            return;
-          }
-        }
-
-        const target = targetPositionRef.current;
-        const current = currentPositionRef.current;
-        const diff = target - current;
-
-        if (Math.abs(diff) > 0.0005) {
-          currentPositionRef.current += diff * 0.16;
-          applyCardTransforms(currentPositionRef.current);
-          animationFrameIdRef.current = requestAnimationFrame(renderLoop);
-        } else {
-          if (current !== target) {
-            currentPositionRef.current = target;
-            applyCardTransforms(target);
-          }
-          animationFrameIdRef.current = null;
-        }
-      };
-
-      animationFrameIdRef.current = requestAnimationFrame(renderLoop);
-    };
-
-    const onScroll = () => {
-      if (!isMobile()) return;
-      const track = mobileTrackRef.current;
-      if (!track) return;
-
-      const rect = track.getBoundingClientRect();
-      if (rect.bottom < -100 || rect.top > window.innerHeight + 100) return;
-
-      const stickyTop = 56; // 3.5rem (top-14)
-      const stickyEl = stickyContainerRef.current;
-      const stickyHeight = stickyEl ? stickyEl.offsetHeight : 500;
-      const maxScroll = track.offsetHeight - stickyHeight;
-      if (maxScroll <= 0) return;
-
-      const scrollY = stickyTop - rect.top;
-      const rawProgress = Math.min(Math.max(scrollY / maxScroll, 0), 1);
-      targetPositionRef.current = getSteppedProgress(
-        rawProgress,
-        SERVICES.length - 1
-      );
-
-      startRenderLoop();
-
-      // Debounce timer: settle to exact snap point whenever scrolling stops
-      if (snapTimeoutRef.current) {
-        clearTimeout(snapTimeoutRef.current);
-      }
-
-      if (!isAutoScrollingRef.current) {
-        snapTimeoutRef.current = setTimeout(() => {
-          handleScrollSettle();
-        }, 120);
-      }
-    };
-
-    if (isMobile()) {
-      onScroll();
+    if (!isTransitioning) {
+      const rafId = requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          setIsTransitioning(true);
+        });
+      });
+      return () => cancelAnimationFrame(rafId);
     }
+  }, [isTransitioning]);
 
-    window.addEventListener("scroll", onScroll, { passive: true });
-    window.addEventListener("resize", onScroll, { passive: true });
+  // Mobile Auto-Play loop (2.8 seconds per slide)
+  useEffect(() => {
+    if (viewportWidth >= 640) return;
 
-    return () => {
-      window.removeEventListener("scroll", onScroll);
-      window.removeEventListener("resize", onScroll);
-      if (snapTimeoutRef.current) {
-        clearTimeout(snapTimeoutRef.current);
+    const interval = setInterval(() => {
+      if (
+        !isInteractingRef.current &&
+        isSectionInViewRef.current &&
+        document.visibilityState === "visible"
+      ) {
+        nextSlide();
       }
-      if (animationFrameIdRef.current) {
-        cancelAnimationFrame(animationFrameIdRef.current);
-        animationFrameIdRef.current = null;
-      }
-    };
-  }, [applyCardTransforms, handleScrollSettle]);
+    }, 2800);
 
-  // Touch gesture handlers: advance exactly one card per swipe gesture
+    return () => clearInterval(interval);
+  }, [nextSlide, viewportWidth]);
+
+  // Touch gesture handlers for mobile swipe
   const handleTouchStart = (e) => {
+    isInteractingRef.current = true;
+    if (resumeTimerRef.current) {
+      clearTimeout(resumeTimerRef.current);
+      resumeTimerRef.current = null;
+    }
+
+    touchStartXRef.current = e.touches[0].clientX;
     touchStartYRef.current = e.touches[0].clientY;
     touchStartTimeRef.current = Date.now();
+    isHorizontalSwipeRef.current = null;
+    setIsTransitioning(false);
   };
 
-  const handleTouchEnd = (e) => {
-    if (isAutoScrollingRef.current) return;
-    const touchEndY = e.changedTouches[0].clientY;
-    const deltaY = touchStartYRef.current - touchEndY;
-    const deltaTime = Date.now() - touchStartTimeRef.current;
+  const handleTouchMove = (e) => {
+    const currentX = e.touches[0].clientX;
+    const currentY = e.touches[0].clientY;
+    const diffX = currentX - touchStartXRef.current;
+    const diffY = currentY - touchStartYRef.current;
 
-    // Detect deliberate vertical swipe gestures
-    if (Math.abs(deltaY) > 35 && deltaTime < 650) {
-      const track = mobileTrackRef.current;
-      if (!track) return;
-
-      const rect = track.getBoundingClientRect();
-      const stickyTop = 56;
-      const stickyEl = stickyContainerRef.current;
-      const stickyHeight = stickyEl ? stickyEl.offsetHeight : 500;
-      const maxScroll = track.offsetHeight - stickyHeight;
-      if (maxScroll <= 0) return;
-
-      const scrollY = stickyTop - rect.top;
-      const rawProgress = scrollY / maxScroll;
-
-      // Only handle gestures inside the carousel range
-      if (rawProgress >= -0.05 && rawProgress <= 1.05) {
-        const numSteps = SERVICES.length - 1;
-        const currentCard = Math.round(rawProgress * numSteps);
-
-        if (deltaY > 0 && currentCard < numSteps) {
-          // Swipe up (scrolling down) -> advance exactly one card
-          scrollToMobileCard(currentCard + 1);
-        } else if (deltaY < 0 && currentCard > 0) {
-          // Swipe down (scrolling up) -> advance to previous card
-          scrollToMobileCard(currentCard - 1);
-        }
+    if (isHorizontalSwipeRef.current === null) {
+      if (Math.abs(diffX) > 8 || Math.abs(diffY) > 8) {
+        isHorizontalSwipeRef.current = Math.abs(diffX) > Math.abs(diffY);
       }
     }
+
+    if (isHorizontalSwipeRef.current) {
+      setDragOffset(diffX);
+    }
   };
+
+  const handleTouchEnd = () => {
+    const diffX = dragOffset;
+    const duration = Date.now() - touchStartTimeRef.current;
+    const isQuickFlick = duration < 300 && Math.abs(diffX) > 25;
+    const isSignificantDrag = Math.abs(diffX) > 50;
+
+    setIsTransitioning(true);
+    setDragOffset(0);
+
+    if (isHorizontalSwipeRef.current) {
+      if (diffX < 0 && (isSignificantDrag || isQuickFlick)) {
+        setCurrentIndex((prev) => prev + 1);
+      } else if (diffX > 0 && (isSignificantDrag || isQuickFlick)) {
+        setCurrentIndex((prev) => prev - 1);
+      }
+    }
+
+    // Resume auto-play after 2.8s of inactivity
+    resumeTimerRef.current = setTimeout(() => {
+      isInteractingRef.current = false;
+    }, 2800);
+  };
+
+  // Mobile layout calculations
+  const cardWidth = Math.min(viewportWidth * 0.78, 315);
+  const gap = 14;
+  const stepWidth = cardWidth + gap;
+  const centerOffset = (viewportWidth - cardWidth) / 2;
+  const translateX = centerOffset - currentIndex * stepWidth + dragOffset;
+  const activeServiceIndex =
+    ((currentIndex % TOTAL_SERVICES) + TOTAL_SERVICES) % TOTAL_SERVICES;
 
   return (
     <section
       ref={sectionRef}
       id="expertise"
-      className="relative z-30 sm:z-20 lg:z-30 w-full bg-[#faf8f5] dark:bg-[#09090b] text-zinc-900 dark:text-zinc-100 pt-8 sm:pt-14 md:pt-16 lg:pt-28 pb-3 sm:pb-16 lg:pb-20 px-5 sm:px-10 lg:px-16 overflow-x-clip transition-colors duration-300"
+      className="relative z-30 sm:z-20 lg:z-30 w-full bg-[#faf8f5] dark:bg-[#09090b] text-zinc-900 dark:text-zinc-100 pt-8 sm:pt-14 md:pt-16 lg:pt-28 pb-12 sm:pb-16 lg:pb-20 px-5 sm:px-10 lg:px-16 overflow-x-clip transition-colors duration-300"
     >
       {/* Ambient Lighting Gradients */}
       <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-[700px] h-[500px] bg-amber-500/[0.03] dark:bg-indigo-500/[0.03] rounded-full blur-[160px] pointer-events-none" />
@@ -453,7 +294,7 @@ export default function OurExpertise() {
         </div>
 
         {/* ======================================================== */}
-        {/* DESKTOP & TABLET: Responsive Bento Grid                  */}
+        {/* DESKTOP & TABLET: Responsive Bento Grid (Unchanged)      */}
         {/* ======================================================== */}
         <div className="hidden sm:grid sm:grid-cols-2 lg:grid-cols-12 gap-5 sm:gap-6 lg:gap-7">
           {SERVICES.map((service, index) => {
@@ -538,34 +379,49 @@ export default function OurExpertise() {
         </div>
 
         {/* ======================================================== */}
-        {/* MOBILE: Scroll-Driven Mandatory Snapping Carousel        */}
+        {/* MOBILE: Smooth Infinite Horizontal Auto-Playing Carousel */}
         {/* ======================================================== */}
-        <div
-          ref={mobileTrackRef}
-          className="block sm:hidden relative -mx-5"
-          style={{ height: "260vh" }}
-        >
+        <div className="block sm:hidden relative -mx-5 overflow-x-clip overflow-y-visible pt-2 pb-4">
+          {/* Touch Swiping Container */}
           <div
-            ref={stickyContainerRef}
             onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
             onTouchEnd={handleTouchEnd}
-            className="sticky top-14 sm:top-16 w-full overflow-hidden pt-4 pb-2 sm:pb-6 md:pb-8 flex flex-col justify-center"
+            className="w-full overflow-x-clip overflow-y-visible select-none touch-pan-y"
           >
-            {/* Horizontal Cards Moving Track with ample bottom clearance for soft shadow fade */}
+            {/* Sliding Track */}
             <div
-              ref={cardsTrackRef}
-              className="flex gap-3.5 will-change-transform pt-2 pb-6"
+              onTransitionEnd={handleTransitionEnd}
+              className="flex gap-3.5 will-change-transform pt-2 pb-10"
               style={{
-                transform: "translate3d(0, 0, 0)",
+                transform: `translate3d(${translateX}px, 0, 0)`,
+                transition: isTransitioning
+                  ? "transform 500ms cubic-bezier(0.25, 1, 0.5, 1)"
+                  : "none",
               }}
             >
-              {SERVICES.map((service, index) => {
+              {EXTENDED_SERVICES.map((service, index) => {
+                const isActive = index === currentIndex;
+
                 return (
                   <div
-                    key={service.id}
-                    ref={(el) => (mobileCardRefs.current[index] = el)}
-                    onClick={() => scrollToMobileCard(index)}
-                    className="shrink-0 w-[78vw] max-w-[315px] rounded-3xl bg-white dark:bg-[#141418] border border-black/[0.08] dark:border-white/[0.08] p-4 flex flex-col justify-between transition-colors duration-200 select-none cursor-pointer shadow-[0_14px_30px_-6px_rgba(0,0,0,0.12),0_4px_12px_-2px_rgba(0,0,0,0.06)] dark:shadow-none"
+                    key={`${service.id}-${index}`}
+                    onClick={() => {
+                      if (!isActive) {
+                        setIsTransitioning(true);
+                        setCurrentIndex(index);
+                        isInteractingRef.current = true;
+                        if (resumeTimerRef.current) clearTimeout(resumeTimerRef.current);
+                        resumeTimerRef.current = setTimeout(() => {
+                          isInteractingRef.current = false;
+                        }, 2800);
+                      }
+                    }}
+                    className={`shrink-0 w-[78vw] max-w-[315px] rounded-3xl bg-white dark:bg-[#141418] border border-black/[0.08] dark:border-white/[0.08] p-4 flex flex-col justify-between select-none cursor-pointer transition-all duration-500 ease-out ${
+                      isActive
+                        ? "scale-100 opacity-100 shadow-[0_16px_36px_-6px_rgba(0,0,0,0.14),0_6px_16px_-2px_rgba(0,0,0,0.08)] dark:shadow-[0_20px_45px_rgba(0,0,0,0.7)] border-black/[0.14] dark:border-white/[0.22]"
+                        : "scale-[0.93] opacity-65 shadow-sm border-black/[0.06] dark:border-white/[0.06]"
+                    }`}
                     style={{
                       transformOrigin: "center center",
                     }}
@@ -654,6 +510,111 @@ export default function OurExpertise() {
                   </div>
                 );
               })}
+            </div>
+          </div>
+
+          {/* Carousel Navigation Bar: Dots & Prev/Next Controls */}
+          <div className="flex items-center justify-between px-6 pt-0">
+            {/* Step Counter */}
+            <span className="font-mono text-xs text-zinc-500 dark:text-zinc-400">
+              <span className="font-bold text-zinc-900 dark:text-white">
+                0{activeServiceIndex + 1}
+              </span>
+              {" / "}
+              <span>0{TOTAL_SERVICES}</span>
+            </span>
+
+            {/* Pagination Indicator Dots */}
+            <div className="flex items-center gap-1.5">
+              {SERVICES.map((_, i) => {
+                const isDotActive = activeServiceIndex === i;
+
+                return (
+                  <button
+                    key={i}
+                    aria-label={`Go to slide ${i + 1}`}
+                    onClick={() => {
+                      setIsTransitioning(true);
+                      const currentModulo =
+                        ((currentIndex % TOTAL_SERVICES) + TOTAL_SERVICES) %
+                        TOTAL_SERVICES;
+                      const diff = i - currentModulo;
+                      setCurrentIndex((prev) => prev + diff);
+
+                      isInteractingRef.current = true;
+                      if (resumeTimerRef.current)
+                        clearTimeout(resumeTimerRef.current);
+                      resumeTimerRef.current = setTimeout(() => {
+                        isInteractingRef.current = false;
+                      }, 2800);
+                    }}
+                    className={`h-1.5 rounded-full transition-all duration-300 ${
+                      isDotActive
+                        ? "w-6 bg-[#D4AF37]"
+                        : "w-2 bg-black/15 dark:bg-white/20"
+                    }`}
+                  />
+                );
+              })}
+            </div>
+
+            {/* Prev / Next Minimalist Arrow Controls */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  prevSlide();
+                  isInteractingRef.current = true;
+                  if (resumeTimerRef.current)
+                    clearTimeout(resumeTimerRef.current);
+                  resumeTimerRef.current = setTimeout(() => {
+                    isInteractingRef.current = false;
+                  }, 2800);
+                }}
+                aria-label="Previous slide"
+                className="w-8 h-8 rounded-full border border-black/10 dark:border-white/10 bg-white dark:bg-[#141418] flex items-center justify-center text-zinc-700 dark:text-zinc-300 hover:text-black dark:hover:text-white transition-all active:scale-95 shadow-sm"
+              >
+                <svg
+                  className="w-3.5 h-3.5"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M15 19l-7-7 7-7"
+                  />
+                </svg>
+              </button>
+
+              <button
+                onClick={() => {
+                  nextSlide();
+                  isInteractingRef.current = true;
+                  if (resumeTimerRef.current)
+                    clearTimeout(resumeTimerRef.current);
+                  resumeTimerRef.current = setTimeout(() => {
+                    isInteractingRef.current = false;
+                  }, 2800);
+                }}
+                aria-label="Next slide"
+                className="w-8 h-8 rounded-full border border-black/10 dark:border-white/10 bg-white dark:bg-[#141418] flex items-center justify-center text-zinc-700 dark:text-zinc-300 hover:text-black dark:hover:text-white transition-all active:scale-95 shadow-sm"
+              >
+                <svg
+                  className="w-3.5 h-3.5"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M9 5l7 7-7 7"
+                  />
+                </svg>
+              </button>
             </div>
           </div>
         </div>
