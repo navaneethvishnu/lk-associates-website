@@ -142,7 +142,9 @@ export default function CompletedProjects() {
   // Mobile infinite horizontal carousel state
   const [mobileIndex, setMobileIndex] = useState(TOTAL_PROJECTS);
   const [isTransitioning, setIsTransitioning] = useState(true);
-  const [viewportWidth, setViewportWidth] = useState(375);
+  const [viewportWidth, setViewportWidth] = useState(() =>
+    typeof window !== "undefined" ? window.innerWidth : 375
+  );
   const [dragOffset, setDragOffset] = useState(0);
   const [isMobile, setIsMobile] = useState(false);
 
@@ -634,7 +636,7 @@ export default function CompletedProjects() {
     >
       {/* Sticky Fullscreen Viewport on desktop/tablet; relative on mobile */}
       <div
-        className="relative sm:sticky sm:top-0 h-auto sm:h-screen sm:h-[100dvh] w-full overflow-hidden sm:overflow-visible md:overflow-visible lg:overflow-hidden flex flex-col lg:flex-row items-center justify-start lg:justify-center px-5 sm:px-8 lg:px-16 pt-0 sm:pt-6 md:pt-7 lg:pt-0"
+        className="relative sm:sticky sm:top-0 h-auto sm:h-screen sm:h-[100dvh] w-full overflow-x-clip sm:overflow-visible md:overflow-visible lg:overflow-hidden flex flex-col lg:flex-row items-center justify-start lg:justify-center px-0 sm:px-8 lg:px-16 pt-0 sm:pt-6 md:pt-7 lg:pt-0"
       >
         {/* Subtle Ambient Background Lighting */}
         <div className="absolute top-1/2 right-1/4 -translate-y-1/2 w-[550px] h-[550px] bg-amber-500/5 dark:bg-indigo-500/5 rounded-full blur-[140px] pointer-events-none" />
@@ -644,7 +646,7 @@ export default function CompletedProjects() {
           className="relative w-full max-w-7xl mx-auto flex flex-col lg:grid lg:grid-cols-12 gap-0 sm:gap-1 md:gap-2 lg:gap-12 items-center min-h-0 sm:min-h-0 lg:min-h-[640px] overflow-visible"
         >
           {/* TOP (MOBILE) / LEFT (DESKTOP): Heading & Architectural Description */}
-          <div className="w-full lg:col-span-5 flex flex-col justify-start z-30 pt-0 shrink-0 text-left">
+          <div className="w-full lg:col-span-5 flex flex-col justify-start z-30 pt-0 shrink-0 text-left px-5 sm:px-0">
             {/* Category Badges */}
             <div className="flex items-center gap-2 sm:gap-2.5 mb-2 sm:mb-2.5 lg:mb-6 shrink-0">
               <span className="inline-flex items-center px-3 py-1 sm:px-3.5 sm:py-1.5 rounded-full text-[10px] sm:text-[11px] font-semibold tracking-widest uppercase bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 text-zinc-700 dark:text-zinc-300 backdrop-blur-md shrink-0">
@@ -774,7 +776,7 @@ export default function CompletedProjects() {
           {/* ======================================================== */}
           {/* MOBILE: Seamless Infinite Horizontal Auto-Playing Carousel */}
           {/* ======================================================== */}
-          <div className="block sm:hidden w-full relative -mx-5 overflow-x-clip overflow-y-visible pt-4 pb-2">
+          <div className="block sm:hidden w-full relative overflow-x-clip overflow-y-visible pt-4 pb-2">
             {/* Touch Swiping Container */}
             <div
               onTouchStart={handleTouchStart}
@@ -817,6 +819,7 @@ export default function CompletedProjects() {
                           : "scale-[0.93] opacity-65 shadow-sm border-zinc-200/70 dark:border-white/[0.06]"
                       }`}
                       style={{
+                        width: `${cardWidth}px`,
                         transformOrigin: "center center",
                       }}
                     >
@@ -884,7 +887,7 @@ export default function CompletedProjects() {
             </div>
 
             {/* Carousel Navigation Bar: Counter, Dots & Prev/Next Controls */}
-            <div className="flex items-center justify-between px-6 pt-0">
+            <div className="flex items-center justify-between px-5 pt-0">
               {/* Step Counter */}
               <span className="font-mono text-xs text-zinc-500 dark:text-zinc-400">
                 <span className="font-bold text-zinc-900 dark:text-white">
