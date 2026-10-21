@@ -52,10 +52,7 @@ const EXTENDED_PROJECTS = [
 // Helper to provide pre-computed initial 3D stack arrangement on desktop/tablet
 // preventing cards from rendering as a single stacked card before scroll animation triggers
 const getInitialCardStyle = (index) => {
-  const isTablet =
-    typeof window !== "undefined" &&
-    window.innerWidth >= 640 &&
-    window.innerWidth < 1024;
+  const isTablet = false;
 
   const spacingY = isTablet ? 90 : 165;
   const shiftY = isTablet ? -14 : 0;
@@ -141,10 +138,8 @@ export default function CompletedProjects() {
 
   // Mobile infinite horizontal carousel state
   const [mobileIndex, setMobileIndex] = useState(TOTAL_PROJECTS);
-  const [isTransitioning, setIsTransitioning] = useState(true);
-  const [viewportWidth, setViewportWidth] = useState(() =>
-    typeof window !== "undefined" ? window.innerWidth : 375
-  );
+  const [isTransitioning, setIsTransitioning] = useState(false);
+  const [viewportWidth, setViewportWidth] = useState(375);
   const [dragOffset, setDragOffset] = useState(0);
   const [isMobile, setIsMobile] = useState(false);
 
