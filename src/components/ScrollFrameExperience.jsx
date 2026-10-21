@@ -4,7 +4,7 @@ import { useEffect, useRef, useCallback } from "react";
 import { useTheme } from "@/context/ThemeContext";
 
 const TOTAL_FRAMES = 360;
-const FRAME_PATH = (idx) => `/frames/frame_${String(idx).padStart(3, "0")}.jpg`;
+const FRAME_PATH = (idx) => `/newFrames-webp/frame_${String(idx).padStart(3, "0")}.webp`;
 
 export default function ScrollFrameExperience() {
   const containerRef = useRef(null);
