@@ -24,6 +24,7 @@ export default function ScrollFrameExperience() {
   const desktopTextRef = useRef(null);
   const mobileTextRef = useRef(null);
   const scrollIndicatorRef = useRef(null);
+  const headlineRef = useRef(null);
 
   // Fast outward search for closest loaded frame (O(dist) vs O(N) linear set scan)
   const getClosestLoadedFrame = useCallback((frame) => {
@@ -251,6 +252,20 @@ export default function ScrollFrameExperience() {
       mobileTextRef.current.style.transform = `translate3d(${mobileX.toFixed(2)}%, 0, 0)`;
     }
 
+    // Center Hero Headline: "Your Dream. Our Commitment."
+    // Smoothly fades out as scroll reaches frame 40; completely invisible by frame 40 (frame 40 progress = 39 / 359)
+    if (headlineRef.current) {
+      const frame40Progress = 39 / (TOTAL_FRAMES - 1);
+      const fadeProgress = Math.min(Math.max(p / frame40Progress, 0), 1);
+      const headlineOpacity = Math.max(0, 1 - fadeProgress);
+      const headlineY = fadeProgress * -14;
+
+      headlineRef.current.style.opacity = headlineOpacity.toFixed(3);
+      headlineRef.current.style.transform = `translate3d(0, ${headlineY.toFixed(1)}px, 0)`;
+      headlineRef.current.style.visibility = headlineOpacity > 0.005 ? "visible" : "hidden";
+      headlineRef.current.style.pointerEvents = headlineOpacity > 0.005 ? "auto" : "none";
+    }
+
     // Scroll To Explore Indicator: smoothly fades out over first 2% of scroll
     if (scrollIndicatorRef.current) {
       const fadeProgress = Math.min(p / 0.02, 1);
@@ -408,6 +423,107 @@ export default function ScrollFrameExperience() {
 
         {/* Ambient Top Shadow Bar (Dark mode only) */}
         <div className="absolute top-0 inset-x-0 h-32 pointer-events-none z-10 transition-colors duration-300 hidden dark:block bg-gradient-to-b from-black/80 via-black/30 to-transparent" />
+
+        {/* Center Hero Headline: "Your Dream. Our Commitment." (Fades out smoothly by frame 40) */}
+        <div
+          ref={headlineRef}
+          className="absolute inset-0 flex items-center justify-center z-20 pointer-events-none px-4 sm:px-6 select-none will-change-transform"
+          style={{
+            transform: "translate3d(0, 0px, 0)",
+            opacity: 1,
+            visibility: "visible",
+          }}
+        >
+          <div className="hero-headline-enter relative flex flex-col items-center justify-center text-center">
+            <h2
+              className="hero-headline-wrap m-0 p-0 leading-[1.08] sm:leading-[1.05] flex flex-col items-center"
+              style={{
+                fontSize: "clamp(2.25rem, 6.8vw, 5.8rem)",
+                fontFamily:
+                  '"Avenir Next", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
+              }}
+            >
+              {/* Line 1: Your Dream. */}
+              <span className="block whitespace-nowrap">
+                <span className="hero-gold-thin mr-3 sm:mr-4 md:mr-5 inline-block">
+                  Your
+                </span>
+                <span className="hero-gold-bold inline-block">
+                  Dream.
+                </span>
+              </span>
+
+              {/* Line 2: Our Commitment. */}
+              <span className="block whitespace-nowrap mt-1.5 sm:mt-2 md:mt-2.5">
+                <span className="hero-gold-thin mr-3 sm:mr-4 md:mr-5 inline-block">
+                  Our
+                </span>
+                <span className="hero-gold-bold inline-block">
+                  Commitment.
+                </span>
+              </span>
+            </h2>
+          </div>
+        </div>
+
+        <style>{`
+          @keyframes heroHeadlineFadeIn {
+            0% {
+              opacity: 0;
+              transform: translateY(10px);
+            }
+            100% {
+              opacity: 1;
+              transform: translateY(0);
+            }
+          }
+          .hero-headline-enter {
+            animation: heroHeadlineFadeIn 1s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+          }
+
+          /* Light Mode: Subtle, realistic metallic gold (#D4AF37) without brown or orange cast */
+          .hero-gold-thin {
+            font-weight: 250;
+            letter-spacing: 0.035em;
+            background: linear-gradient(180deg, #F3E5C8 0%, #E2C572 25%, #D4AF37 55%, #B88F28 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            color: #D4AF37;
+          }
+          .hero-gold-bold {
+            font-weight: 650;
+            letter-spacing: -0.01em;
+            background: linear-gradient(180deg, #F5E8CC 0%, #E2C572 22%, #D4AF37 52%, #B88F28 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            color: #D4AF37;
+          }
+          .hero-headline-wrap {
+            filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.16))
+                    drop-shadow(0 4px 12px rgba(0, 0, 0, 0.10));
+          }
+
+          /* Dark Mode: Lighter, brighter champagne-gold with luminous elegance */
+          :global(.dark) .hero-gold-thin,
+          .dark .hero-gold-thin {
+            background: linear-gradient(180deg, #FFFFFF 0%, #FAF0D8 30%, #F2D996 68%, #E5C368 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            color: #F0D590;
+          }
+          :global(.dark) .hero-gold-bold,
+          .dark .hero-gold-bold {
+            background: linear-gradient(180deg, #FFFDF8 0%, #FAECCC 25%, #F0D48D 58%, #E2BD5A 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            color: #E5C268;
+          }
+          :global(.dark) .hero-headline-wrap,
+          .dark .hero-headline-wrap {
+            filter: drop-shadow(0 2px 10px rgba(0, 0, 0, 0.35))
+                    drop-shadow(0 0 18px rgba(245, 220, 140, 0.22));
+          }
+        `}</style>
 
         {/* Desktop Hero Text: Center-aligned, moves upward from below viewport, flush against bottom edge with zero gap */}
         <div
