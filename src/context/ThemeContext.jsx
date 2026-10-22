@@ -3,23 +3,23 @@
 import { createContext, useContext, useSyncExternalStore } from "react";
 
 const ThemeContext = createContext({
-  theme: "dark",
+  theme: "light",
   toggleTheme: () => {},
 });
 
 function getThemeSnapshot() {
-  if (typeof window === "undefined") return "dark";
+  if (typeof window === "undefined") return "light";
   try {
     const saved = localStorage.getItem("theme");
     if (saved === "light" || saved === "dark") return saved;
-    return document.documentElement.classList.contains("light") ? "light" : "dark";
+    return document.documentElement.classList.contains("dark") ? "dark" : "light";
   } catch {
-    return "dark";
+    return "light";
   }
 }
 
 function getThemeServerSnapshot() {
-  return "dark";
+  return "light";
 }
 
 const themeListeners = new Set();
